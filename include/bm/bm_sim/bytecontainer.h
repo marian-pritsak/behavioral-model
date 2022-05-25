@@ -177,6 +177,16 @@ class ByteContainer {
     bytes.insert(pos, other.begin(), other.end());
   }
 
+  //! Inserts another string object into this container, starting at \p index
+  void insert(int index, const std::string &other) {
+    if(other.size() <= bytes.size() - index) {
+      for (auto byte_value : other) {
+        bytes[index] = byte_value;
+        index++;
+      }
+    }
+  }
+
   //! Appends a character at the end of the container
   void push_back(char c) {
     bytes.push_back(c);

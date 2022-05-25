@@ -1497,7 +1497,8 @@ MatchKeyParam::Type match_name_to_match_type(const std::string &name) {
         {"lpm", MatchKeyParam::Type::LPM},
         {"ternary", MatchKeyParam::Type::TERNARY},
         {"valid", MatchKeyParam::Type::VALID},
-        {"range", MatchKeyParam::Type::RANGE} };
+        {"range", MatchKeyParam::Type::RANGE},
+        {"list", MatchKeyParam::Type::LIST} };
 
   auto it = map_name_to_match_type.find(name);
   if (it == map_name_to_match_type.end())

@@ -125,6 +125,10 @@ public:
         params.emplace_back(MatchKeyParam::Type::RANGE,
                             bm_param.range.start, bm_param.range.end_);
         break;
+      case BmMatchParamType::type::LIST:
+        params.emplace_back(MatchKeyParam::Type::LIST,
+                            bm_param.list_.key, bm_param.list_.mask, bm_param.list_.width);
+        break;
       default:
         assert(0 && "wrong type");
       }
@@ -186,6 +190,17 @@ public:
             BmMatchParam bm_param;
             bm_param.type = BmMatchParamType::type::RANGE;
             bm_param.__set_range(bm_param_range);
+            match_key.push_back(std::move(bm_param));
+            break;
+          }
+        case MatchKeyParam::Type::LIST:
+          {
+            BmMatchParamList bm_param_list;
+            bm_param_list.key = param.key;
+            bm_param_list.mask = param.mask;
+            BmMatchParam bm_param;
+            bm_param.type = BmMatchParamType::type::LIST;
+            bm_param.__set_list_(bm_param_list);
             match_key.push_back(std::move(bm_param));
             break;
           }
