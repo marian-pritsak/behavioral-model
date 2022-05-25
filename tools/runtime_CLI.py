@@ -678,6 +678,10 @@ def parse_match_key(table, key_fields):
                         )
                     param.list_.key += key
                     param.list_.mask += mask
+            else:
+                raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '&&&' to separate "
+                            "key/mask".format(field))
 
         elif param_type == BmMatchParamType.RANGE_LIST:
             range_list_array = field.split(",")
@@ -704,6 +708,10 @@ def parse_match_key(table, key_fields):
                         )
                     param.range_list.start += start
                     param.range_list.end_ += end
+            else:
+                raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '->' to separate "
+                            "start/end".format(field))
         else:
             assert(0)
         params.append(param)
@@ -746,11 +754,23 @@ def BmMatchParamRange_to_str(self):
 
 
 def BmMatchParamList_to_str(self):
-    return ""
+    final_str = ""
+    for itr in range(int(len(self.key)/self.width)):
+        key = mask = ""
+        key = printable_byte_str(self.key[itr*self.width:(itr*self.width + self.width)])
+        mask = printable_byte_str(self.mask[itr*self.width:(itr*self.width + self.width)])
+        final_str += "[" + key + " &&& " + mask + "]"
+    return final_str
 
 
 def BmMatchParamRangeList_to_str(self):
-    return ""
+    final_str = ""
+    for itr in range(int(len(self.start)/self.width)):
+        start = end_ = ""
+        start = printable_byte_str(self.start[itr*self.width:(itr*self.width + self.width)])
+        end_ = printable_byte_str(self.end_[itr*self.width:(itr*self.width + self.width)])
+        final_str += "[" + start + " -> " + end_ + "]"
+    return final_str
 
 BmMatchParam.to_str = BmMatchParam_to_str
 BmMatchParamExact.to_str = BmMatchParamExact_to_str
