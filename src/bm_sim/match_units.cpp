@@ -807,6 +807,7 @@ class MatchKeyBuilderHelper {
           key->l_mask[j].insert(first_byte, subMask);
           format_ternary_key(&key->l_data[j][first_byte], &key->l_mask[j][first_byte], param.list_item_width);
         }
+        first_byte += param.list_item_width;
       }
       else if (param.type == MatchKeyParam::Type::RANGELIST) {
         int num_items = param.key.size() / param.list_item_width;
@@ -817,6 +818,7 @@ class MatchKeyBuilderHelper {
           key->l_data[j][first_byte] &= get_byte0_mask(kb.key_input[i].nbits);
           key->l_mask[j].insert(first_byte, subMask);
         }
+        first_byte += param.list_item_width;
       }
       else {
         key->l_data[0].insert(first_byte, param.key);
@@ -837,8 +839,8 @@ class MatchKeyBuilderHelper {
             key->l_mask[0].insert(first_byte, param.mask);
             break;
         }
+        first_byte += param.key.size();
       }
-      first_byte += param.key.size();
     }
   }
 
