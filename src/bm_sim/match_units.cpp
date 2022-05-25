@@ -510,8 +510,17 @@ class MatchKeyBuilderHelper {
   static std::vector<MatchKeyParam>
   entry_to_match_params(const MatchKeyBuilder &kb, const K &key) {
     std::vector<MatchKeyParam> params;
-
+    int num_range_lists{0};
     size_t nfields = kb.key_mapping.size();
+
+    for (size_t i = 0; i < nfields; i++) {
+      const size_t imp_idx = kb.key_mapping.at(i);
+      const auto &f_info = kb.key_input.at(imp_idx);
+      if (f_info.mtype == MatchKeyParam::Type::RANGELIST) {
+        num_range_lists++;
+      }
+    }
+
     for (size_t i = 0; i < nfields; i++) {
       const size_t imp_idx = kb.key_mapping.at(i);
       const auto &f_info = kb.key_input.at(imp_idx);
@@ -519,7 +528,7 @@ class MatchKeyBuilderHelper {
       size_t nbytes = nbits_to_nbytes(f_info.nbits);
 
       if (f_info.mtype == MatchKeyParam::Type::LIST) {
-        size_t list_size = key.list_sizes[imp_idx];
+        size_t list_size = key.list_sizes[imp_idx - num_range_lists];
         std::string r_data{""};
         std::string r_mask{""};
         for(int j=0;j<list_size;++j) {
