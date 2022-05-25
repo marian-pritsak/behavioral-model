@@ -51,6 +51,7 @@ struct MatchKeyParam {
   // easier (implementation-wise) to put RANGE first. Note that this order only
   // matters for the implementation.
   enum class Type {
+    RANGELIST,
     LIST,
     RANGE,
     VALID,
@@ -78,7 +79,7 @@ struct MatchKeyParam {
   Type type;
   std::string key;  // start for range
   std::string mask{};  // optional, end for range
-  int list_item_width{0}; // for list data type
+  int list_item_width{0}; // for list and range_list data types
   int prefix_length{0};  // optional
 };
 
@@ -514,6 +515,9 @@ using MatchUnitRange = MatchUnitGeneric<RangeMatchKey, V>;
 
 template <typename V>
 using MatchUnitList = MatchUnitGeneric<ListMatchKey, V>;
+
+template <typename V>
+using MatchUnitRangeList = MatchUnitGeneric<RangeListMatchKey, V>;
 
 
 }  // namespace bm

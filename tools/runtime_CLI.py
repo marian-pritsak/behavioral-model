@@ -662,6 +662,7 @@ def parse_match_key(table, key_fields):
             if "&&&" in list_array[0]:
                 param = BmMatchParam(type=param_type,
                                     list_=BmMatchParamList(bytes(), bytes(), 0))
+                param.list_.width = ((bw + 7) // 8)
                 for val in list_array:
                     try:
                         key, mask = val.split("&&&")
@@ -677,13 +678,13 @@ def parse_match_key(table, key_fields):
                         )
                     param.list_.key += key
                     param.list_.mask += mask
-                    param.list_.width = len(key)
 
         elif param_type == BmMatchParamType.RANGE_LIST:
             range_list_array = field.split(",")
             if "->" in range_list_array[0]:
-                param = BmMatchParam(type=BmMatchParamType.RANGE_LIST,
-                                        range_list=BmMatchParamRangeList(range_entries=[]))
+                param = BmMatchParam(type=param_type,
+                                    range_list=BmMatchParamRangeList(bytes(), bytes(), 0))
+                param.range_list.width = ((bw + 7) // 8)
                 for val in range_list_array:
                     try:
                         start, end = val.split("->")
@@ -701,7 +702,8 @@ def parse_match_key(table, key_fields):
                         raise UIn_MatchKeyError(
                             "start is less than end in expression %s" % field
                         )
-                    param.range_list.range_entries.append(BmMatchParamRange(start, end))
+                    param.range_list.start += start
+                    param.range_list.end_ += end
         else:
             assert(0)
         params.append(param)

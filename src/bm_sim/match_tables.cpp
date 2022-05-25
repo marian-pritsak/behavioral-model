@@ -44,6 +44,7 @@ create_match_unit(const std::string match_type, const size_t size,
   using MUTernary = MatchUnitTernary<V>;
   using MURange = MatchUnitRange<V>;
   using MUList = MatchUnitList<V>;
+  using MURangeList = MatchUnitRangeList<V>;
 
   std::unique_ptr<MatchUnitAbstract<V> > match_unit;
   if (match_type == "exact")
@@ -61,6 +62,9 @@ create_match_unit(const std::string match_type, const size_t size,
   else if (match_type == "list")
     match_unit = std::unique_ptr<MUList>(
         new MUList(size, match_key_builder, lookup_factory));
+  else if (match_type == "range_list")
+    match_unit = std::unique_ptr<MURangeList>(
+        new MURangeList(size, match_key_builder, lookup_factory));
   else
     assert(0 && "invalid match type");
   return match_unit;

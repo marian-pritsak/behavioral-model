@@ -33,7 +33,7 @@ using internal_handle_t = uintptr_t;
 using entry_handle_t = uint32_t;
 
 enum class MatchUnitType {
-  EXACT, LPM, TERNARY, RANGE, LIST
+  EXACT, LPM, TERNARY, RANGE, LIST, RANGELIST
 };
 
 // Entry types.
@@ -101,6 +101,15 @@ struct ListMatchKey : public RangeMatchKey {
   std::vector<size_t> list_widths;
 
   static constexpr MatchUnitType mut = MatchUnitType::LIST;
+};
+
+struct RangeListMatchKey : public ListMatchKey {
+  RangeListMatchKey() {}
+
+  std::vector<size_t> range_list_sizes;
+  std::vector<size_t> range_list_widths;
+
+  static constexpr MatchUnitType mut = MatchUnitType::RANGELIST;
 };
 
 }  // namespace bm

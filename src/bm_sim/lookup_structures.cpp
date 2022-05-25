@@ -249,7 +249,18 @@ bool operator==(const RangeMatchKey &k1, const RangeMatchKey &k2) {
 
 bool operator==(const ListMatchKey &k1, const ListMatchKey &k2) {
   return (k1.list_sizes == k2.list_sizes && k1.list_widths == k2.list_widths
-          && k1.l_data == k2.l_data && k1.l_mask == k2.l_mask);
+          && k1.l_data == k2.l_data && k1.l_mask == k2.l_mask
+          && k1.range_widths == k2.range_widths );
+}
+
+bool operator==(const RangeListMatchKey &k1, const RangeListMatchKey &k2) {
+  return (k1.range_list_sizes == k2.range_list_sizes
+       && k1.range_list_widths == k2.range_list_widths
+       && k1.list_sizes == k2.list_sizes
+       && k1.list_widths == k2.list_widths
+       && k1.l_data == k2.l_data
+       && k1.l_mask == k2.l_mask
+       && k1.range_widths == k2.range_widths);
 }
 
 // used by both TernaryMap and RangeMap
@@ -575,6 +586,104 @@ class ListMap : public ListLookupStructure {
   size_t nbytes_key;
 };
 
+class RangeListMap : public RangeListLookupStructure {
+ public:
+  RangeListMap(size_t size, size_t nbytes_key, bool enable_cache = true)
+      : entry_list(size, enable_cache), nbytes_key(nbytes_key) {}
+
+  bool lookup(const ByteContainer &key_data,
+              internal_handle_t *handle) const override {
+    auto cmp = [this](const ByteContainer &key_data, const RangeListMatchKey &k) {
+      size_t offset = 0;
+
+      for (int i=0;i<k.range_list_sizes.size();++i) {
+        bool range_list_matched{false};
+        size_t range_list_size = k.range_list_sizes[i];
+        size_t range_list_width = k.range_list_widths[i];
+        for (int j=0;j<range_list_size;++j) {
+          if ((memcmp(&key_data[offset], &k.l_data[j][offset], range_list_width) >= 0)
+           && (memcmp(&key_data[offset], &k.l_mask[j][offset], range_list_width) <= 0)) {
+            range_list_matched = true;
+            break;
+          }
+        }
+        if (range_list_matched == false) {
+          return false;
+        }
+        offset += range_list_width;
+      }
+
+      for (int i=0;i<k.list_sizes.size();++i) {
+        bool list_matched{false};
+        size_t list_size = k.list_sizes[i];
+        size_t list_width = k.list_widths[i];
+        for (int j=0;j<list_size;++j) {
+          bool item_matched{true};
+          for(int c=offset;c < offset + list_width;++c) {
+            if (k.l_data[j][c] != (key_data[c] & k.l_mask[j][c])) {
+              item_matched = false;
+              break;
+            }
+          }
+          if (item_matched == true) {
+            list_matched = true;
+            break;
+          }
+        }
+        if (list_matched == false) {
+          return false;
+        }
+        offset += list_width;
+      }
+
+      for (const int w : k.range_widths) {
+        if (memcmp(&key_data[offset], &k.l_data[0][offset], w) < 0) {
+          return false;
+        }
+        if (memcmp(&key_data[offset], &k.l_mask[0][offset], w) > 0) {
+          return false;
+        }
+        offset += w;
+      }
+
+      for (; offset < nbytes_key; offset++) {
+        if (k.l_data[0][offset] != (key_data[offset] & k.l_mask[0][offset]))
+          return false;
+      }
+
+      return true;
+    };
+
+    return entry_list.lookup(key_data, handle, cmp);
+  }
+
+  bool entry_exists(const RangeListMatchKey &key) const override {
+    return entry_list.exists(key);
+  }
+
+  bool retrieve_handle(const RangeListMatchKey &key,
+                       internal_handle_t *handle) const override {
+    return entry_list.retrieve_handle(key, handle);
+  }
+
+  void add_entry(const RangeListMatchKey &key,
+                 internal_handle_t handle) override {
+    entry_list.add(key, handle);
+  }
+
+  void delete_entry(const RangeListMatchKey &key) override {
+    entry_list.delete_entry(key);
+  }
+
+  void clear() override {
+    entry_list.clear();
+  }
+
+ private:
+  EntryList<RangeListMatchKey> entry_list;
+  size_t nbytes_key;
+};
+
 }  // namespace
 
 LookupStructureFactory::LookupStructureFactory(bool enable_ternary_cache)
@@ -615,6 +724,12 @@ LookupStructureFactory::create<ListMatchKey>(
   return f->create_for_list(size, nbytes_key);
 }
 
+template <>
+std::unique_ptr<LookupStructure<RangeListMatchKey> >
+LookupStructureFactory::create<RangeListMatchKey>(
+    LookupStructureFactory *f, size_t size, size_t nbytes_key) {
+  return f->create_for_range_list(size, nbytes_key);
+}
 
 std::unique_ptr<ExactLookupStructure>
 LookupStructureFactory::create_for_exact(size_t size, size_t nbytes_key) {
@@ -644,6 +759,12 @@ std::unique_ptr<ListLookupStructure>
 LookupStructureFactory::create_for_list(size_t size, size_t nbytes_key) {
   return std::unique_ptr<ListLookupStructure>(
       new ListMap(size, nbytes_key, enable_ternary_cache));
+}
+
+std::unique_ptr<RangeListLookupStructure>
+LookupStructureFactory::create_for_range_list(size_t size, size_t nbytes_key) {
+  return std::unique_ptr<RangeListLookupStructure>(
+      new RangeListMap(size, nbytes_key, enable_ternary_cache));
 }
 
 }  // namespace bm

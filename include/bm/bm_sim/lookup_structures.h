@@ -158,6 +158,7 @@ using LPMLookupStructure = LookupStructure<LPMMatchKey>;
 using TernaryLookupStructure = LookupStructure<TernaryMatchKey>;
 using RangeLookupStructure = LookupStructure<RangeMatchKey>;
 using ListLookupStructure = LookupStructure<ListMatchKey>;
+using RangeListLookupStructure = LookupStructure<RangeListMatchKey>;
 
 //! This class is used by match units to create instances of the appropriate
 //! LookupStructure implementation. In order to use custom data structures in
@@ -197,6 +198,10 @@ class LookupStructureFactory {
   //! Create a lookup structure for list macthes
   virtual std::unique_ptr<ListLookupStructure>
   create_for_list(size_t size, size_t nbytes_key);
+
+  //! Create a lookup structure for range_list matches
+  virtual std::unique_ptr<RangeListLookupStructure>
+  create_for_range_list(size_t size, size_t nbytes_key);
 
  private:
   bool enable_ternary_cache;
