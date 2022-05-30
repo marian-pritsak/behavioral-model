@@ -515,13 +515,13 @@ class ListMap : public ListLookupStructure {
     auto cmp = [this](const ByteContainer &key_data, const ListMatchKey &k) {
       size_t offset = 0;
 
-      for (int i=0;i<k.list_sizes.size();++i) {
+      for (size_t i=0;i<k.list_sizes.size();++i) {
         bool list_matched{false};
         size_t list_size = k.list_sizes[i];
         size_t list_width = k.list_widths[i];
-        for (int j=0;j<list_size;++j) {
+        for (size_t j=0;j<list_size;++j) {
           bool item_matched{true};
-          for(int c=offset;c < offset + list_width;++c) {
+          for(size_t c=offset;c < offset + list_width;++c) {
             if (k.l_data[j][c] != (key_data[c] & k.l_mask[j][c])) {
               item_matched = false;
               break;
@@ -596,11 +596,11 @@ class RangeListMap : public RangeListLookupStructure {
     auto cmp = [this](const ByteContainer &key_data, const RangeListMatchKey &k) {
       size_t offset = 0;
 
-      for (int i=0;i<k.range_list_sizes.size();++i) {
+      for (size_t i=0;i<k.range_list_sizes.size();++i) {
         bool range_list_matched{false};
         size_t range_list_size = k.range_list_sizes[i];
         size_t range_list_width = k.range_list_widths[i];
-        for (int j=0;j<range_list_size;++j) {
+        for (size_t j=0;j<range_list_size;++j) {
           if ((memcmp(&key_data[offset], &k.l_data[j][offset], range_list_width) >= 0)
            && (memcmp(&key_data[offset], &k.l_mask[j][offset], range_list_width) <= 0)) {
             range_list_matched = true;
@@ -613,13 +613,13 @@ class RangeListMap : public RangeListLookupStructure {
         offset += range_list_width;
       }
 
-      for (int i=0;i<k.list_sizes.size();++i) {
+      for (size_t i=0;i<k.list_sizes.size();++i) {
         bool list_matched{false};
         size_t list_size = k.list_sizes[i];
         size_t list_width = k.list_widths[i];
-        for (int j=0;j<list_size;++j) {
+        for (size_t j=0;j<list_size;++j) {
           bool item_matched{true};
-          for(int c=offset;c < offset + list_width;++c) {
+          for(size_t c=offset;c < offset + list_width;++c) {
             if (k.l_data[j][c] != (key_data[c] & k.l_mask[j][c])) {
               item_matched = false;
               break;

@@ -426,6 +426,10 @@ class MatchKeyBuilderHelper {
                                 pref_len_from_mask(mask_start, mask_end));
             break;
           }
+        case MatchKeyParam::Type::RANGELIST:
+        case MatchKeyParam::Type::LIST:
+          assert(0);
+          break;
       }
     }
 
@@ -460,7 +464,7 @@ class MatchKeyBuilderHelper {
         size_t list_size = key.list_sizes[imp_idx];
         std::string r_data{""};
         std::string r_mask{""};
-        for(int j=0;j<list_size;++j) {
+        for(size_t j=0;j<list_size;++j) {
           auto start = key.l_data[j].begin() + byte_offset;
           auto end = start + nbytes;
           auto mask_start = key.l_mask[j].begin() + byte_offset;
@@ -497,6 +501,10 @@ class MatchKeyBuilderHelper {
                                   pref_len_from_mask(mask_start, mask_end));
               break;
             }
+          case MatchKeyParam::Type::RANGELIST:
+          case MatchKeyParam::Type::LIST:
+            assert(0);
+            break;
         }
       }
     }
@@ -531,7 +539,7 @@ class MatchKeyBuilderHelper {
         size_t list_size = key.list_sizes[imp_idx - num_range_lists];
         std::string r_data{""};
         std::string r_mask{""};
-        for(int j=0;j<list_size;++j) {
+        for(size_t j=0;j<list_size;++j) {
           auto start = key.l_data[j].begin() + byte_offset;
           auto end = start + nbytes;
           auto mask_start = key.l_mask[j].begin() + byte_offset;
@@ -545,7 +553,7 @@ class MatchKeyBuilderHelper {
         size_t range_list_size = key.range_list_sizes[imp_idx];
         std::string r_data{""};
         std::string r_mask{""};
-        for(int j=0;j<range_list_size;++j) {
+        for(size_t j=0;j<range_list_size;++j) {
           auto start = key.l_data[j].begin() + byte_offset;
           auto end = start + nbytes;
           auto mask_start = key.l_mask[j].begin() + byte_offset;
@@ -582,6 +590,10 @@ class MatchKeyBuilderHelper {
                                   pref_len_from_mask(mask_start, mask_end));
               break;
             }
+          case MatchKeyParam::Type::RANGELIST:
+          case MatchKeyParam::Type::LIST:
+            assert(0);
+            break;
         }
       }
     }
@@ -643,6 +655,8 @@ class MatchKeyBuilderHelper {
           break;
         case MatchKeyParam::Type::RANGE:
         case MatchKeyParam::Type::TERNARY:
+        case MatchKeyParam::Type::RANGELIST:
+        case MatchKeyParam::Type::LIST:
           assert(0);
       }
       first_byte += param.key.size();
@@ -779,6 +793,10 @@ class MatchKeyBuilderHelper {
         case MatchKeyParam::Type::TERNARY:
           key->mask.append(param.mask);
           break;
+        case MatchKeyParam::Type::LIST:
+        case MatchKeyParam::Type::RANGELIST:
+          assert(0);
+          break;
       }
       first_byte += param.key.size();
     }
@@ -847,6 +865,10 @@ class MatchKeyBuilderHelper {
           case MatchKeyParam::Type::TERNARY:
             key->l_mask[0].insert(first_byte, param.mask);
             break;
+          case MatchKeyParam::Type::LIST:
+          case MatchKeyParam::Type::RANGELIST:
+            assert(0);
+            break;
         }
         first_byte += param.key.size();
       }
@@ -884,7 +906,7 @@ MatchKeyBuilder::match_params_sanity_check(
 
     size_t nbytes = nbits_to_nbytes(f_info.nbits);
     if (param.type == MatchKeyParam::Type::LIST || param.type == MatchKeyParam::Type::RANGELIST) {
-      if (param.list_item_width != nbytes) return false;
+      if (static_cast<size_t>(param.list_item_width) != nbytes) return false;
       if (param.key.size() % nbytes != 0) return false;
     }
     else {
