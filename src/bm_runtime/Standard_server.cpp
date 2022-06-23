@@ -202,6 +202,7 @@ public:
             BmMatchParamList bm_param_list;
             bm_param_list.key = param.key;
             bm_param_list.mask = param.mask;
+            bm_param_list.width = param.list_item_width;
             BmMatchParam bm_param;
             bm_param.type = BmMatchParamType::type::LIST;
             bm_param.__set_list_(bm_param_list);
@@ -213,6 +214,7 @@ public:
             BmMatchParamRangeList bm_param_range_list;
             bm_param_range_list.start = param.key;
             bm_param_range_list.end_ = param.mask;
+            bm_param_range_list.width = param.list_item_width;
             BmMatchParam bm_param;
             bm_param.type = BmMatchParamType::type::RANGE_LIST;
             bm_param.__set_range_list(bm_param_range_list);
