@@ -56,6 +56,10 @@ size_t nbits_to_nbytes(size_t nbits) {
 std::string
 MatchKeyParam::type_to_string(Type t) {
   switch (t) {
+    case Type::RANGELIST:
+      return "RANGELIST";
+    case Type::LIST:
+      return "LIST";
     case Type::RANGE:
       return "RANGE";
     case Type::VALID:
@@ -80,21 +84,45 @@ std::ostream& operator<<(std::ostream &out, const MatchKeyParam &p) {
     // type column is 10 chars wide
     out << std::setw(10) << std::left << MatchKeyParam::type_to_string(p.type);
   }
-  dump_hexstring(out, p.key);
-  switch (p.type) {
-    case MatchKeyParam::Type::LPM:
-      out << "/" << p.prefix_length;
-      break;
-    case MatchKeyParam::Type::TERNARY:
+  if (p.type == MatchKeyParam::Type::LIST) {
+    int num_items = p.key.size() / p.list_item_width;
+    for(int j=0;j<num_items;++j) {
+      std::string subKey = p.key.substr(j * p.list_item_width, p.list_item_width);
+      std::string subMask = p.mask.substr(j * p.list_item_width, p.list_item_width);
+      dump_hexstring(out, subKey);
       out << " &&& ";
-      dump_hexstring(out, p.mask);
-      break;
-    case MatchKeyParam::Type::RANGE:
-      out << " -> ";
-      dump_hexstring(out, p.mask);
-      break;
-    default:
-      break;
+      dump_hexstring(out, subMask);
+      out << ",";
+    }
+  }
+  else if (p.type == MatchKeyParam::Type::RANGELIST) {
+    int num_items = p.key.size() / p.list_item_width;
+    for(int j=0;j<num_items;++j) {
+      std::string subKey = p.key.substr(j * p.list_item_width, p.list_item_width);
+      std::string subMask = p.mask.substr(j * p.list_item_width, p.list_item_width);
+      dump_hexstring(out, subKey);
+      out << " => ";
+      dump_hexstring(out, subMask);
+      out << ",";
+    }
+  }
+  else {
+    dump_hexstring(out, p.key);
+    switch (p.type) {
+      case MatchKeyParam::Type::LPM:
+        out << "/" << p.prefix_length;
+        break;
+      case MatchKeyParam::Type::TERNARY:
+        out << " &&& ";
+        dump_hexstring(out, p.mask);
+        break;
+      case MatchKeyParam::Type::RANGE:
+        out << " -> ";
+        dump_hexstring(out, p.mask);
+        break;
+      default:
+        break;
+    }
   }
   return out;
 }
@@ -398,6 +426,10 @@ class MatchKeyBuilderHelper {
                                 pref_len_from_mask(mask_start, mask_end));
             break;
           }
+        case MatchKeyParam::Type::RANGELIST:
+        case MatchKeyParam::Type::LIST:
+          assert(0);
+          break;
       }
     }
 
@@ -412,6 +444,161 @@ class MatchKeyBuilderHelper {
   static std::vector<MatchKeyParam>
   entry_to_match_params(const MatchKeyBuilder &kb, const K &key) {
     return entry_to_match_params<TernaryMatchKey>(kb, key);
+  }
+
+  template <typename K,
+            typename std::enable_if<K::mut == MatchUnitType::LIST, int>::type
+            = 0>
+  static std::vector<MatchKeyParam>
+  entry_to_match_params(const MatchKeyBuilder &kb, const K &key) {
+    std::vector<MatchKeyParam> params;
+
+    size_t nfields = kb.key_mapping.size();
+    for (size_t i = 0; i < nfields; i++) {
+      const size_t imp_idx = kb.key_mapping.at(i);
+      const auto &f_info = kb.key_input.at(imp_idx);
+      const size_t byte_offset = kb.key_offsets.at(i);
+      size_t nbytes = nbits_to_nbytes(f_info.nbits);
+
+      if (f_info.mtype == MatchKeyParam::Type::LIST) {
+        size_t list_size = key.list_sizes[imp_idx];
+        std::string r_data{""};
+        std::string r_mask{""};
+        for(size_t j=0;j<list_size;++j) {
+          auto start = key.l_data[j].begin() + byte_offset;
+          auto end = start + nbytes;
+          auto mask_start = key.l_mask[j].begin() + byte_offset;
+          auto mask_end = mask_start + nbytes;
+          r_data.append(std::string(start, end));
+          r_mask.append(std::string(mask_start, mask_end));
+        }
+        params.emplace_back(f_info.mtype, r_data, r_mask, nbytes);
+      }
+      else {
+        auto start = key.l_data[0].begin() + byte_offset;
+        auto end = start + nbytes;
+        switch (f_info.mtype) {
+          case MatchKeyParam::Type::VALID:
+          case MatchKeyParam::Type::EXACT:
+            params.emplace_back(f_info.mtype, std::string(start, end));
+            break;
+          case MatchKeyParam::Type::RANGE:
+            // should only happen for RangeMatchKey
+            // range treated the same as ternary
+          case MatchKeyParam::Type::TERNARY:
+            {
+              auto mask_start = key.l_mask[0].begin() + byte_offset;
+              auto mask_end = mask_start + nbytes;
+              params.emplace_back(f_info.mtype, std::string(start, end),
+                                  std::string(mask_start, mask_end));
+              break;
+            }
+          case MatchKeyParam::Type::LPM:
+            {
+              auto mask_start = key.l_mask[0].begin() + byte_offset;
+              auto mask_end = mask_start + nbytes;
+              params.emplace_back(f_info.mtype, std::string(start, end),
+                                  pref_len_from_mask(mask_start, mask_end));
+              break;
+            }
+          case MatchKeyParam::Type::RANGELIST:
+          case MatchKeyParam::Type::LIST:
+            assert(0);
+            break;
+        }
+      }
+    }
+
+    return params;
+  }
+
+  template <typename K,
+            typename std::enable_if<K::mut == MatchUnitType::RANGELIST, int>::type
+            = 0>
+  static std::vector<MatchKeyParam>
+  entry_to_match_params(const MatchKeyBuilder &kb, const K &key) {
+    std::vector<MatchKeyParam> params;
+    int num_range_lists{0};
+    size_t nfields = kb.key_mapping.size();
+
+    for (size_t i = 0; i < nfields; i++) {
+      const size_t imp_idx = kb.key_mapping.at(i);
+      const auto &f_info = kb.key_input.at(imp_idx);
+      if (f_info.mtype == MatchKeyParam::Type::RANGELIST) {
+        num_range_lists++;
+      }
+    }
+
+    for (size_t i = 0; i < nfields; i++) {
+      const size_t imp_idx = kb.key_mapping.at(i);
+      const auto &f_info = kb.key_input.at(imp_idx);
+      const size_t byte_offset = kb.key_offsets.at(i);
+      size_t nbytes = nbits_to_nbytes(f_info.nbits);
+
+      if (f_info.mtype == MatchKeyParam::Type::LIST) {
+        size_t list_size = key.list_sizes[imp_idx - num_range_lists];
+        std::string r_data{""};
+        std::string r_mask{""};
+        for(size_t j=0;j<list_size;++j) {
+          auto start = key.l_data[j].begin() + byte_offset;
+          auto end = start + nbytes;
+          auto mask_start = key.l_mask[j].begin() + byte_offset;
+          auto mask_end = mask_start + nbytes;
+          r_data.append(std::string(start, end));
+          r_mask.append(std::string(mask_start, mask_end));
+        }
+        params.emplace_back(f_info.mtype, r_data, r_mask, nbytes);
+      }
+      else if (f_info.mtype == MatchKeyParam::Type::RANGELIST) {
+        size_t range_list_size = key.range_list_sizes[imp_idx];
+        std::string r_data{""};
+        std::string r_mask{""};
+        for(size_t j=0;j<range_list_size;++j) {
+          auto start = key.l_data[j].begin() + byte_offset;
+          auto end = start + nbytes;
+          auto mask_start = key.l_mask[j].begin() + byte_offset;
+          auto mask_end = mask_start + nbytes;
+          r_data.append(std::string(start, end));
+          r_mask.append(std::string(mask_start, mask_end));
+        }
+        params.emplace_back(f_info.mtype, r_data, r_mask, nbytes);
+      }
+      else {
+        auto start = key.l_data[0].begin() + byte_offset;
+        auto end = start + nbytes;
+        switch (f_info.mtype) {
+          case MatchKeyParam::Type::VALID:
+          case MatchKeyParam::Type::EXACT:
+            params.emplace_back(f_info.mtype, std::string(start, end));
+            break;
+          case MatchKeyParam::Type::RANGE:
+            // should only happen for RangeMatchKey
+            // range treated the same as ternary
+          case MatchKeyParam::Type::TERNARY:
+            {
+              auto mask_start = key.l_mask[0].begin() + byte_offset;
+              auto mask_end = mask_start + nbytes;
+              params.emplace_back(f_info.mtype, std::string(start, end),
+                                  std::string(mask_start, mask_end));
+              break;
+            }
+          case MatchKeyParam::Type::LPM:
+            {
+              auto mask_start = key.l_mask[0].begin() + byte_offset;
+              auto mask_end = mask_start + nbytes;
+              params.emplace_back(f_info.mtype, std::string(start, end),
+                                  pref_len_from_mask(mask_start, mask_end));
+              break;
+            }
+          case MatchKeyParam::Type::RANGELIST:
+          case MatchKeyParam::Type::LIST:
+            assert(0);
+            break;
+        }
+      }
+    }
+
+    return params;
   }
 
   // TODO(antonin):
@@ -468,6 +655,8 @@ class MatchKeyBuilderHelper {
           break;
         case MatchKeyParam::Type::RANGE:
         case MatchKeyParam::Type::TERNARY:
+        case MatchKeyParam::Type::RANGELIST:
+        case MatchKeyParam::Type::LIST:
           assert(0);
       }
       first_byte += param.key.size();
@@ -512,6 +701,71 @@ class MatchKeyBuilderHelper {
     return entry;
   }
 
+  template <typename E, typename std::enable_if<
+              decltype(E::key)::mut == MatchUnitType::LIST, int>::type = 0>
+  static E
+  match_params_to_entry(const MatchKeyBuilder &kb,
+                        const std::vector<MatchKeyParam> &params) {
+    E entry;
+    match_params_to_entry_list_and_range_list(kb, params, &entry.key);
+    size_t w = 0;
+    auto &key = entry.key;
+    for (size_t i = 0; i < kb.inv_mapping.size(); i++) {
+      const auto &param = params.at(kb.inv_mapping[i]);
+      if (param.type == MatchKeyParam::Type::RANGE) {
+        key.range_widths.push_back(param.key.size());
+        w += param.key.size();
+      }
+      else if (param.type == MatchKeyParam::Type::LIST) {
+        key.list_sizes.push_back(param.key.size() / param.list_item_width);
+        key.list_widths.push_back(param.list_item_width);
+        w += param.list_item_width;
+      }
+    }
+    size_t s = key.l_data[0].size();
+    assert(s == key.l_mask[0].size());
+    assert(s >= w);
+    if (s > w) {
+      format_ternary_key(&key.l_data[0][w], &key.l_mask[0][w], s - w);
+    }
+    return entry;
+  }
+
+  template <typename E, typename std::enable_if<
+              decltype(E::key)::mut == MatchUnitType::RANGELIST, int>::type = 0>
+  static E
+  match_params_to_entry(const MatchKeyBuilder &kb,
+                        const std::vector<MatchKeyParam> &params) {
+    E entry;
+    match_params_to_entry_list_and_range_list(kb, params, &entry.key);
+    size_t w = 0;
+    auto &key = entry.key;
+    for (size_t i = 0; i < kb.inv_mapping.size(); i++) {
+      const auto &param = params.at(kb.inv_mapping[i]);
+      if (param.type == MatchKeyParam::Type::RANGE) {
+        key.range_widths.push_back(param.key.size());
+        w += param.key.size();
+      }
+      else if (param.type == MatchKeyParam::Type::LIST) {
+        key.list_sizes.push_back(param.key.size() / param.list_item_width);
+        key.list_widths.push_back(param.list_item_width);
+        w += param.list_item_width;
+      }
+      else if (param.type == MatchKeyParam::Type::RANGELIST) {
+        key.range_list_sizes.push_back(param.key.size() / param.list_item_width);
+        key.range_list_widths.push_back(param.list_item_width);
+        w += param.list_item_width;
+      }
+    }
+    size_t s = key.l_data[0].size();
+    assert(s == key.l_mask[0].size());
+    assert(s >= w);
+    if (s > w) {
+      format_ternary_key(&key.l_data[0][w], &key.l_mask[0][w], s - w);
+    }
+    return entry;
+  }
+
  private:
   static void match_params_to_entry_ternary_and_range(
       const MatchKeyBuilder &kb, const std::vector<MatchKeyParam> &params,
@@ -539,10 +793,88 @@ class MatchKeyBuilderHelper {
         case MatchKeyParam::Type::TERNARY:
           key->mask.append(param.mask);
           break;
+        case MatchKeyParam::Type::LIST:
+        case MatchKeyParam::Type::RANGELIST:
+          assert(0);
+          break;
       }
       first_byte += param.key.size();
     }
   }
+
+  static void match_params_to_entry_list_and_range_list(
+      const MatchKeyBuilder &kb, const std::vector<MatchKeyParam> &params,
+      ListMatchKey *key) {
+    int num_byte_containers = 1;
+    for (auto& param : params) {
+      if (param.type == MatchKeyParam::Type::LIST || param.type == MatchKeyParam::Type::RANGELIST) {
+        int num_list_items = param.key.size() / param.list_item_width;
+        if (num_list_items > num_byte_containers) {
+          num_byte_containers = num_list_items;
+        }
+      }
+    }
+    key->l_data.clear();
+    key->l_mask.clear();
+    for (int i=0;i<num_byte_containers;++i) {
+      key->l_data.push_back(ByteContainer(kb.nbytes_key, 0));
+      key->l_mask.push_back(ByteContainer(kb.nbytes_key, 0));
+    }
+
+    size_t first_byte = 0;
+    for (size_t i = 0; i < kb.inv_mapping.size(); i++) {
+      const auto &param = params.at(kb.inv_mapping[i]);
+      if (param.type == MatchKeyParam::Type::LIST) {
+        int num_items = param.key.size() / param.list_item_width;
+        for(int j=0;j<num_items;++j) {
+          std::string subKey = param.key.substr(j * param.list_item_width, param.list_item_width);
+          std::string subMask = param.mask.substr(j * param.list_item_width, param.list_item_width);
+          key->l_data[j].insert(first_byte, subKey);
+          key->l_data[j][first_byte] &= get_byte0_mask(kb.key_input[i].nbits);
+          key->l_mask[j].insert(first_byte, subMask);
+          format_ternary_key(&key->l_data[j][first_byte], &key->l_mask[j][first_byte], param.list_item_width);
+        }
+        first_byte += param.list_item_width;
+      }
+      else if (param.type == MatchKeyParam::Type::RANGELIST) {
+        int num_items = param.key.size() / param.list_item_width;
+        for(int j=0;j<num_items;++j) {
+          std::string subKey = param.key.substr(j * param.list_item_width, param.list_item_width);
+          std::string subMask = param.mask.substr(j * param.list_item_width, param.list_item_width);
+          key->l_data[j].insert(first_byte, subKey);
+          key->l_data[j][first_byte] &= get_byte0_mask(kb.key_input[i].nbits);
+          key->l_mask[j].insert(first_byte, subMask);
+        }
+        first_byte += param.list_item_width;
+      }
+      else {
+        key->l_data[0].insert(first_byte, param.key);
+        key->l_data[0][first_byte] &= get_byte0_mask(kb.key_input[i].nbits);
+        switch (param.type) {
+          case MatchKeyParam::Type::VALID:
+            key->l_mask[0].insert(first_byte, "\xff");
+            break;
+          case MatchKeyParam::Type::EXACT:
+            key->l_mask[0].insert(first_byte, std::string(param.key.size(), '\xff'));
+            break;
+          case MatchKeyParam::Type::LPM:
+            key->l_mask[0].insert(first_byte, 
+                create_mask_from_pref_len(param.prefix_length, param.key.size()));
+            break;
+          case MatchKeyParam::Type::RANGE:
+          case MatchKeyParam::Type::TERNARY:
+            key->l_mask[0].insert(first_byte, param.mask);
+            break;
+          case MatchKeyParam::Type::LIST:
+          case MatchKeyParam::Type::RANGELIST:
+            assert(0);
+            break;
+        }
+        first_byte += param.key.size();
+      }
+    }
+  }
+
 };
 
 }  // namespace detail
@@ -573,7 +905,13 @@ MatchKeyBuilder::match_params_sanity_check(
     if (param.type != f_info.mtype) return false;
 
     size_t nbytes = nbits_to_nbytes(f_info.nbits);
-    if (param.key.size() != nbytes) return false;
+    if (param.type == MatchKeyParam::Type::LIST || param.type == MatchKeyParam::Type::RANGELIST) {
+      if (static_cast<size_t>(param.list_item_width) != nbytes) return false;
+      if (param.key.size() % nbytes != 0) return false;
+    }
+    else {
+      if (param.key.size() != nbytes) return false;
+    }
 
     switch (param.type) {
       case MatchKeyParam::Type::VALID:
@@ -590,6 +928,10 @@ MatchKeyBuilder::match_params_sanity_check(
         if (param.mask.size() != nbytes) return false;
         if (std::memcmp(param.key.data(), param.mask.data(), nbytes) > 0)
           return false;
+        break;
+      case MatchKeyParam::Type::LIST:
+      case MatchKeyParam::Type::RANGELIST:
+        if (param.mask.size() != param.key.size()) return false;
         break;
     }
   }
@@ -1082,15 +1424,18 @@ MatchUnitGeneric<K, V>::reset_state_() {
 namespace {
 
 void serialize_key(const ExactMatchKey &key, std::ostream *out) {
+  (*out) << key.data.to_hex() << "\n";
   (void) key; (void) out;
 }
 
 void serialize_key(const LPMMatchKey &key, std::ostream *out) {
+  (*out) << key.data.to_hex() << "\n";
   (*out) << key.prefix_length << "\n";
 }
 
 // works for RangeMatchKey as well
 void serialize_key(const TernaryMatchKey &key, std::ostream *out) {
+  (*out) << key.data.to_hex() << "\n";
   (*out) << key.mask.to_hex() << "\n";
   (*out) << key.priority << "\n";
 }
@@ -1107,7 +1452,6 @@ MatchUnitGeneric<K, V>::serialize_(std::ostream *out) const {
     // deserializing
     (*out) << handle_ << "\n";
     (*out) << entry.key.version << "\n";
-    (*out) << entry.key.data.to_hex() << "\n";
     serialize_key(entry.key, out);
     entry.value.serialize(out);
     const EntryMeta &meta = this->entry_meta[handle_];
@@ -1195,5 +1539,15 @@ template class
 MatchUnitGeneric<RangeMatchKey, ActionEntry>;
 template class
 MatchUnitGeneric<RangeMatchKey, ActionProfile::IndirectIndex>;
+
+template class
+MatchUnitGeneric<ListMatchKey, ActionEntry>;
+template class
+MatchUnitGeneric<ListMatchKey, ActionProfile::IndirectIndex>;
+
+template class
+MatchUnitGeneric<RangeListMatchKey, ActionEntry>;
+template class
+MatchUnitGeneric<RangeListMatchKey, ActionProfile::IndirectIndex>;
 
 }  // namespace bm

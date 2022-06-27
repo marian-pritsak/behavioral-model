@@ -124,14 +124,16 @@ class MatchType:
     TERNARY = 2
     VALID = 3
     RANGE = 4
+    LIST = 5
+    RANGE_LIST = 6
 
     @staticmethod
     def to_str(x):
-        return {0: "exact", 1: "lpm", 2: "ternary", 3: "valid", 4: "range"}[x]
+        return {0: "exact", 1: "lpm", 2: "ternary", 3: "valid", 4: "range", 5: "list", 6: "range_list"}[x]
 
     @staticmethod
     def from_str(x):
-        return {"exact": 0, "lpm": 1, "ternary": 2, "valid": 3, "range": 4}[x]
+        return {"exact": 0, "lpm": 1, "ternary": 2, "valid": 3, "range": 4, "list": 5, "range_list": 6}[x]
 
 
 class Table:
@@ -582,6 +584,8 @@ _match_types_mapping = {
     MatchType.TERNARY: BmMatchParamType.TERNARY,
     MatchType.VALID: BmMatchParamType.VALID,
     MatchType.RANGE: BmMatchParamType.RANGE,
+    MatchType.LIST: BmMatchParamType.LIST,
+    MatchType.RANGE_LIST: BmMatchParamType.RANGE_LIST
 }
 
 def parse_match_key(table, key_fields):
@@ -652,6 +656,62 @@ def parse_match_key(table, key_fields):
                 )
             param = BmMatchParam(type=param_type,
                                  range=BmMatchParamRange(start, end))
+
+        elif param_type == BmMatchParamType.LIST:
+            list_array = field.split(",")
+            if "&&&" in list_array[0]:
+                param = BmMatchParam(type=param_type,
+                                    list_=BmMatchParamList(bytes(), bytes(), 0))
+                param.list_.width = ((bw + 7) // 8)
+                for val in list_array:
+                    try:
+                        key, mask = val.split("&&&")
+                    except ValueError:
+                        raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '&&&' to separate key/mask "
+                            "and ',' to separate items in list".format(field))
+                    key = bytes_to_string(parse_param_(key, bw))
+                    mask = bytes_to_string(parse_param_(mask, bw))
+                    if len(mask) != len(key):
+                        raise UIn_MatchKeyError(
+                            "Key and mask have different lengths in expression %s" % field
+                        )
+                    param.list_.key += key
+                    param.list_.mask += mask
+            else:
+                raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '&&&' to separate "
+                            "key/mask".format(field))
+
+        elif param_type == BmMatchParamType.RANGE_LIST:
+            range_list_array = field.split(",")
+            if "->" in range_list_array[0]:
+                param = BmMatchParam(type=param_type,
+                                    range_list=BmMatchParamRangeList(bytes(), bytes(), 0))
+                param.range_list.width = ((bw + 7) // 8)
+                for val in range_list_array:
+                    try:
+                        start, end = val.split("->")
+                    except ValueError:
+                        raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '->' to separate start/end "
+                            "and ',' to separate items in range_list".format(field))
+                    start = bytes_to_string(parse_param_(start, bw))
+                    end = bytes_to_string(parse_param_(end, bw))
+                    if len(start) != len(end):
+                        raise UIn_MatchKeyError(
+                            "start and end have different lengths in expression %s" % field
+                        )
+                    if start > end:
+                        raise UIn_MatchKeyError(
+                            "start is less than end in expression %s" % field
+                        )
+                    param.range_list.start += start
+                    param.range_list.end_ += end
+            else:
+                raise UIn_MatchKeyError(
+                            "Invalid field value {}, use '->' to separate "
+                            "start/end".format(field))
         else:
             assert(0)
         params.append(param)
@@ -668,7 +728,9 @@ def BmMatchParam_to_str(self):
         (self.lpm.to_str() if self.lpm else "") +\
         (self.ternary.to_str() if self.ternary else "") +\
         (self.valid.to_str() if self.valid else "") +\
-        (self.range.to_str() if self.range else "")
+        (self.range.to_str() if self.range else "") +\
+        (self.list_.to_str() if self.list_ else "") +\
+        (self.range_list.to_str() if self.range_list else "")
 
 
 def BmMatchParamExact_to_str(self):
@@ -691,12 +753,33 @@ def BmMatchParamRange_to_str(self):
     return printable_byte_str(self.start) + " -> " + printable_byte_str(self.end_)
 
 
+def BmMatchParamList_to_str(self):
+    final_str = ""
+    for itr in range(int(len(self.key)/self.width)):
+        key = mask = ""
+        key = printable_byte_str(self.key[itr*self.width:(itr*self.width + self.width)])
+        mask = printable_byte_str(self.mask[itr*self.width:(itr*self.width + self.width)])
+        final_str += "[" + key + " &&& " + mask + "]"
+    return final_str
+
+
+def BmMatchParamRangeList_to_str(self):
+    final_str = ""
+    for itr in range(int(len(self.start)/self.width)):
+        start = end_ = ""
+        start = printable_byte_str(self.start[itr*self.width:(itr*self.width + self.width)])
+        end_ = printable_byte_str(self.end_[itr*self.width:(itr*self.width + self.width)])
+        final_str += "[" + start + " -> " + end_ + "]"
+    return final_str
+
 BmMatchParam.to_str = BmMatchParam_to_str
 BmMatchParamExact.to_str = BmMatchParamExact_to_str
 BmMatchParamLPM.to_str = BmMatchParamLPM_to_str
 BmMatchParamTernary.to_str = BmMatchParamTernary_to_str
 BmMatchParamValid.to_str = BmMatchParamValid_to_str
 BmMatchParamRange.to_str = BmMatchParamRange_to_str
+BmMatchParamList.to_str = BmMatchParamList_to_str
+BmMatchParamRangeList.to_str = BmMatchParamRangeList_to_str
 
 
 def parse_pvs_value(input_str, bitwidth):
@@ -1153,7 +1236,7 @@ class RuntimeAPI(cmd.Cmd):
                 "Table %s has no action %s" % (table_name, action_name)
             )
 
-        if table.match_type in {MatchType.TERNARY, MatchType.RANGE}:
+        if table.match_type in {MatchType.TERNARY, MatchType.RANGE, MatchType.LIST, MatchType.RANGE_LIST}:
             try:
                 priority = int(args.pop(-1))
             except:
@@ -1416,7 +1499,7 @@ class RuntimeAPI(cmd.Cmd):
         else:
             self.check_indirect(table)
 
-        if table.match_type in {MatchType.TERNARY, MatchType.RANGE}:
+        if table.match_type in {MatchType.TERNARY, MatchType.RANGE, MatchType.LIST, MatchType.RANGE_LIST}:
             try:
                 priority = int(args.pop(-1))
             except:
@@ -2385,7 +2468,7 @@ class RuntimeAPI(cmd.Cmd):
 
         table = self.get_res("table", table_name, ResType.table)
 
-        if table.match_type in {MatchType.TERNARY, MatchType.RANGE}:
+        if table.match_type in {MatchType.TERNARY, MatchType.RANGE, MatchType.LIST, MatchType.RANGE_LIST}:
             try:
                 priority = int(args.pop(-1))
             except:

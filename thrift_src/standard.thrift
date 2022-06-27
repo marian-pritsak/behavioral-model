@@ -36,7 +36,9 @@ enum BmMatchParamType {
   LPM = 1,
   TERNARY = 2,
   VALID = 3,
-  RANGE = 4
+  RANGE = 4,
+  LIST = 5,
+  RANGE_LIST = 6
 }
 
 struct BmMatchParamExact {
@@ -63,6 +65,18 @@ struct BmMatchParamRange {
   2:binary end_
 }
 
+struct BmMatchParamList {
+  1:binary key,
+  2:binary mask,
+  3:i32    width
+}
+
+struct BmMatchParamRangeList {
+  1:binary start,
+  2:binary end_,
+  3:i32    width
+}
+
 # Thrift union sucks in C++, the following is much better
 struct BmMatchParam {
   1:BmMatchParamType type,
@@ -70,7 +84,10 @@ struct BmMatchParam {
   3:optional BmMatchParamLPM lpm,
   4:optional BmMatchParamTernary ternary,
   5:optional BmMatchParamValid valid,
-  6:optional BmMatchParamRange range
+  6:optional BmMatchParamRange range,
+  # list is a keyword in Thrift
+  7:optional BmMatchParamList list_,
+  8:optional BmMatchParamRangeList range_list
 }
 
 typedef list<BmMatchParam> BmMatchParams
